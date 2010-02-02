@@ -1,0 +1,23 @@
+Status: unsubmitted
+
+This patch was for Debian bug #303736.  I now believe it's in the wrong
+place; the generic mourn inferior should do this, perhaps.
+
+---
+ gdb/linux-thread-db.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+Index: gdb-7.0.1/gdb/linux-thread-db.c
+===================================================================
+--- gdb-7.0.1.orig/gdb/linux-thread-db.c	2010-01-30 16:23:17.000000000 -0500
++++ gdb-7.0.1/gdb/linux-thread-db.c	2010-01-30 16:24:37.000000000 -0500
+@@ -1281,6 +1281,9 @@ thread_db_mourn_inferior (struct target_
+ 
+   target_beneath->to_mourn_inferior (target_beneath);
+ 
++  /* Destroy thread info; it's no longer valid.  */
++  init_thread_list ();
++
+   /* Detach thread_db target ops.  */
+   if (!thread_db_list)
+     unpush_target (ops);
