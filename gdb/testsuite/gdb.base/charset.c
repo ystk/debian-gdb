@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2001, 2004, 2007, 2008, 2009 Free Software Foundation, Inc.
+   Copyright 2001, 2004, 2007-2012 Free Software Foundation, Inc.
 
    Contributed by Red Hat, originally written by Jim Blandy.
 
@@ -50,10 +50,10 @@ char ebcdic_us_string[NUM_CHARS];
 char ibm1047_string[NUM_CHARS];
 
 /* We make a phony wchar_t and then pretend that this platform uses
-   UCS-4 (or UCS-2, depending on the size -- same difference for the
+   UTF-32 (or UTF-16, depending on the size -- same difference for the
    purposes of this test).  */
 typedef unsigned int wchar_t;
-wchar_t ucs_4_string[NUM_CHARS];
+wchar_t utf_32_string[NUM_CHARS];
 
 /* We also define a couple phony types for testing the u'' and U''
    support.  It is ok if these have the wrong size on some platforms
@@ -65,9 +65,17 @@ typedef unsigned int char32_t;
 char16_t uvar;
 char32_t Uvar;
 
+char16_t *String16;
+char32_t *String32;
+
 /* A typedef to a typedef should also work.  */
 typedef wchar_t my_wchar_t;
 my_wchar_t myvar;
+
+/* Some arrays for simple assignment tests.  */
+short short_array[3];
+int int_array[3];
+long long_array[3];
 
 void
 init_string (char string[],
@@ -103,13 +111,15 @@ fill_run (char string[], int start, int len, int first)
 
 
 void
-init_ucs4 ()
+init_utf32 ()
 {
   int i;
 
   for (i = 0; i < NUM_CHARS; ++i)
-    ucs_4_string[i] = iso_8859_1_string[i] & 0xff;
+    utf_32_string[i] = iso_8859_1_string[i] & 0xff;
 }
+
+extern void malloc_stub (void);
 
 int main ()
 {
@@ -117,6 +127,9 @@ int main ()
   set_debug_traps();
   breakpoint();
 #endif
+
+  malloc_stub ();
+
   /* Initialize ascii_string.  */
   init_string (ascii_string,
                120,
@@ -171,9 +184,9 @@ int main ()
   /* The digits, at least, are contiguous.  */
   fill_run (ibm1047_string, 59, 10, 240);
 
-  init_ucs4 ();
+  init_utf32 ();
 
-  myvar = ucs_4_string[7];
+  myvar = utf_32_string[7];
 
   return 0;            /* all strings initialized */
 }

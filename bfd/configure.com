@@ -70,13 +70,13 @@ $DECK
    IF match_pos <> 0 THEN;
       POSITION(BEGINNING_OF(match_pos));
       ERASE(match_pos);
-      COPY_TEXT('0');
+      COPY_TEXT('1');
    ENDIF;
    match_pos := SEARCH_QUIETLY('@BFD_HOST_64BIT_LONG_LONG@', FORWARD, EXACT, rang);
    IF match_pos <> 0 THEN;
       POSITION(BEGINNING_OF(match_pos));
       ERASE(match_pos);
-      COPY_TEXT('0');
+      COPY_TEXT('1');
    ENDIF;
    match_pos := SEARCH_QUIETLY('@BFD_HOST_64_BIT_DEFINED@', FORWARD, EXACT, rang);
    IF match_pos <> 0 THEN;
@@ -257,6 +257,13 @@ $DECK
 $  EOD
 $!
 $!
+$! create bfd_stdint.h
+$!
+$ write sys$output "Generate `bfd_stdint.h'"
+$ create []bfd_stdint.h
+#include <inttypes.h>
+$!
+$!
 $! create targmatch.h
 $!
 $ write sys$output "Generate `targmatch.h'"
@@ -318,6 +325,9 @@ $ create []config.h
 /* Disable NLS  */
 #undef ENABLE_NLS
 $!
+$ write sys$output "Copy sysdep.h"
+$ copy [.hosts]alphavms.h sysdep.h
+$
 $ write sys$output "Generate build.com"
 $!
 $ if ARCH.eqs."alpha"
@@ -362,7 +372,6 @@ $ write sys$output "Generate elf64-target.h from elfxx-target.h"
 $ edit/tpu/nojournal/nosection/nodisplay/command=substxx.tpu -
         []elfXX-target.h /output=[]elf64-target.h
 $ del substxx.tpu;*
-$ copy [.hosts]alphavms.h sysdep.h
 $ endif
 $ append sys$input build.com
 $DECK
