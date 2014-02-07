@@ -1,6 +1,6 @@
 /* Test printing of structure member names in gdb. PR exp/1821
 
-   Copyright 2005, Free Software Foundation, Inc.
+   Copyright 2005, 2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,4 +20,4 @@
 struct foo { double x__0, y__0, z__1; } bar;
 
 
-int main(void) { return 0; }
+int main(void) { return (int) bar.x__0; }

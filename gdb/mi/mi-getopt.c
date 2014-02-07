@@ -1,5 +1,5 @@
 /* MI Command Set - MI Option Parser.
-   Copyright (C) 2000, 2001, 2007, 2008, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2000-2001, 2007-2012 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions (a Red Hat company).
 
    This file is part of GDB.
@@ -24,11 +24,12 @@
 int
 mi_getopt (const char *prefix,
 	   int argc, char **argv,
-	   struct mi_opt *opts,
+	   const struct mi_opt *opts,
 	   int *optind, char **optarg)
 {
   char *arg;
-  struct mi_opt *opt;
+  const struct mi_opt *opt;
+
   /* We assume that argv/argc are ok. */
   if (*optind > argc || *optind < 0)
     internal_error (__FILE__, __LINE__,
@@ -78,7 +79,7 @@ mi_valid_noargs (const char *prefix, int argc, char **argv)
 {
   int optind = 0;
   char *optarg;
-  static struct mi_opt opts[] =
+  static const struct mi_opt opts[] =
   {
     { 0, 0, 0 }
   };

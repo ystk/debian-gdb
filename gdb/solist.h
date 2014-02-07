@@ -1,6 +1,6 @@
 /* Shared library declarations for GDB, the GNU Debugger.
-   Copyright (C) 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000,
-   2001, 2007, 2008, 2009 Free Software Foundation, Inc.
+   Copyright (C) 1990-1996, 1998-2001, 2007-2012 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -39,7 +39,7 @@ struct so_list
     /* A pointer to target specific link map information.  Often this
        will be a copy of struct link_map from the user process, but
        it need not be; it can be any collection of data needed to
-       traverse the dynamic linker's data structures. */
+       traverse the dynamic linker's data structures.  */
     struct lm_info *lm_info;
 
     /* Shared object file name, exactly as it appears in the
@@ -49,8 +49,11 @@ struct so_list
        map we've already loaded.  */
     char so_original_name[SO_NAME_MAX_PATH_SIZE];
 
-    /* shared object file name, expanded to something GDB can open */
+    /* Shared object file name, expanded to something GDB can open.  */
     char so_name[SO_NAME_MAX_PATH_SIZE];
+
+    /* Program space this shared library belongs to.  */
+    struct program_space *pspace;
 
     /* The following fields of the structure are built from
        information gathered from the shared object file itself, and
@@ -59,9 +62,13 @@ struct so_list
        current_sos must initialize these fields to 0.  */
 
     bfd *abfd;
-    char symbols_loaded;	/* flag: symbols read in yet? */
-    char from_tty;		/* flag: print msgs? */
-    struct objfile *objfile;	/* objfile for loaded lib */
+    char symbols_loaded;	/* flag: symbols read in yet?  */
+
+    /* objfile with symbols for a loaded library.  Target memory is read from
+       ABFD.  OBJFILE may be NULL either before symbols have been loaded, if
+       the file cannot be found or after the command "nosharedlibrary".  */
+    struct objfile *objfile;
+
     struct target_section *sections;
     struct target_section *sections_end;
 
@@ -78,8 +85,8 @@ struct target_so_ops
     void (*relocate_section_addresses) (struct so_list *so,
                                         struct target_section *);
 
-    /* Free the the link map info and any other private data
-       structures associated with a so_list entry.  */
+    /* Free the link map info and any other private data structures
+       associated with a so_list entry.  */
     void (*free_so) (struct so_list *so);
 
     /* Reset or free private data structures not associated with
@@ -87,26 +94,38 @@ struct target_so_ops
     void (*clear_solib) (void);
 
     /* Target dependent code to run after child process fork.  */
-    void (*solib_create_inferior_hook) (void);
+    void (*solib_create_inferior_hook) (int from_tty);
 
-    /* Do additional symbol handling, lookup, etc. after symbols
-       for a shared object have been loaded.  */
+    /* Do additional symbol handling, lookup, etc. after symbols for a
+       shared object have been loaded in the usual way.  This is
+       called to do any system specific symbol handling that might be
+       needed.  */
     void (*special_symbol_handling) (void);
 
-    /* Construct a list of the currently loaded shared objects.  */
+    /* Construct a list of the currently loaded shared objects.  This
+       list does not include an entry for the main executable file.
+
+       Note that we only gather information directly available from the
+       inferior --- we don't examine any of the shared library files
+       themselves.  The declaration of `struct so_list' says which fields
+       we provide values for.  */
     struct so_list *(*current_sos) (void);
 
-    /* Find, open, and read the symbols for the main executable.  */
+    /* Find, open, and read the symbols for the main executable.  If
+       FROM_TTYP dereferences to a non-zero integer, allow messages to
+       be printed.  This parameter is a pointer rather than an int
+       because open_symbol_file_object is called via catch_errors and
+       catch_errors requires a pointer argument.  */
     int (*open_symbol_file_object) (void *from_ttyp);
 
     /* Determine if PC lies in the dynamic symbol resolution code of
-       the run time loader */
+       the run time loader.  */
     int (*in_dynsym_resolve_code) (CORE_ADDR pc);
 
     /* Find and open shared library binary file.  */
     bfd *(*bfd_open) (char *pathname);
 
-    /* Extra hook for finding and opening a solib.  
+    /* Extra hook for finding and opening a solib.
        Convenience function for remote debuggers finding host libs.  */
     int (*find_and_open_solib) (char *soname,
         unsigned o_flags, char **temp_pathname);
@@ -114,7 +133,6 @@ struct target_so_ops
     /* Hook for looking up global symbols in a library-specific way.  */
     struct symbol * (*lookup_lib_global_symbol) (const struct objfile *objfile,
 						 const char *name,
-						 const char *linkage_name,
 						 const domain_enum domain);
 
     /* Given two so_list objects, one from the GDB thread list
@@ -123,6 +141,14 @@ struct target_so_ops
        Falls back to using strcmp on so_original_name field when set
        to NULL.  */
     int (*same) (struct so_list *gdb, struct so_list *inferior);
+
+    /* Return whether a region of memory must be kept in a core file
+       for shared libraries loaded before "gcore" is used to be
+       handled correctly when the core file is loaded.  This only
+       applies when the section would otherwise not be kept in the
+       core file (in particular, for readonly sections).  */
+    int (*keep_data_in_core) (CORE_ADDR vaddr,
+			      unsigned long size);
   };
 
 /* Free the memory associated with a (so_list *).  */
@@ -140,13 +166,12 @@ extern bfd *solib_bfd_fopen (char *pathname, int fd);
 /* Find solib binary file and open it.  */
 extern bfd *solib_bfd_open (char *in_pathname);
 
-/* FIXME: gdbarch needs to control this variable */
+/* FIXME: gdbarch needs to control this variable.  */
 extern struct target_so_ops *current_target_so_ops;
 
 /* Handler for library-specific global symbol lookup in solib.c.  */
 struct symbol *solib_global_lookup (const struct objfile *objfile,
 				    const char *name,
-				    const char *linkage_name,
 				    const domain_enum domain);
 
 #endif

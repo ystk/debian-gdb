@@ -1,3 +1,207 @@
+gdb (7.4.1+dfsg-0.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Fix debian/sanitize-gdb.sh to use bash.
+  * Run that script to get the expected dfsg-compliant tarball.
+    (Closes: #698074)
+
+ -- David Prévot <taffit@debian.org>  Sun, 27 Jan 2013 12:18:15 -0400
+
+gdb (7.4.1-3) unstable; urgency=low
+
+  * Fix typo: replace mutliarch by multiarch.
+
+ -- Hector Oron <zumbi@debian.org>  Fri, 05 Oct 2012 08:58:19 +0000
+
+gdb (7.4.1-2) unstable; urgency=low
+
+  * Fix empty doc directory when upgrading from squeeze to wheezy.
+    (Closes: #684375)
+  * d/p/m68k-thread-debugging.patch:
+    - Add thread debugging function for m68k. Taken from upstream.
+    Thanks Thorsten Glaser.
+  * d/control: bump standars version to 3.9.3
+
+ -- Hector Oron <zumbi@debian.org>  Wed, 19 Sep 2012 21:16:17 +0000
+
+gdb (7.4.1-1.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Fix LinuxThreads signal handling on GNU/kFreeBSD.  (Closes: #550361,
+    #669043)
+
+ -- Robert Millan <rmh@debian.org>  Sat, 12 May 2012 12:25:16 +0200
+
+gdb (7.4.1-1) unstable; urgency=low
+
+  * New upstream release:
+    - [GDB/MI] Error when resuming program execution in all-stop mode
+      ("Cannot execute this command without a live selected thread").
+    - [Pascal] Polluted display of class methods parameters.
+    - [target remote] Errror when connecting to remote target where
+      disconnected tracing is in effect.
+    - [AVX] Float and ymm* register values not available.
+    - [GDB] Crash when using the "finish" command.
+    - [build] makeinfo should not be required to build GDB.
+  * d/control: enable gdb-multiarch packages
+  * d/rules: disable simulator for gdb-multiarch builds.
+
+ -- Hector Oron <zumbi@debian.org>  Thu, 26 Apr 2012 18:26:18 +0200
+
+gdb (7.4really-1) unstable; urgency=low
+
+  * New upstream release:
+    - Many Python scripting improvements
+    - Better support for ambiguous linespecs
+    - Masked watchpoints
+    - Tracepoint support improvements
+    - Support for Texas Instruments TMS320C6x (tic6x-*-*)
+    - A Renesas RL78 simulator (rl78-*-elf)
+    - Some minor Remote protocol extensions and GDB/MI changes
+  * Temporarily disable gdb-multiarch and gdb-dbg.
+
+ -- Hector Oron <zumbi@debian.org>  Sat, 28 Jan 2012 00:41:20 +0100
+
+gdb (7.4-1~cvs20111117.2) experimental; urgency=low
+
+  * Add build dependency on lib64ncurses5-dev for multilib targets. 
+
+ -- Hector Oron <zumbi@debian.org>  Fri, 18 Nov 2011 19:35:17 +0000
+
+gdb (7.4-1~cvs20111117.1) experimental; urgency=low
+
+  * Add accidentally dropped armhf to architecture list
+  * Add GDB debug package (Closes: #592512, #490049)
+  * Provide GDB multiarch package (Closes: #610519)
+    - Add gdb-multiarch package supporting extra bfd targets similarly to
+      binutils-multiarch; the package is constructed much like gdb64 except that
+      it's build with the gdb configure flags and --enable-targets=all for now.
+    - Thanks Loïc Minier.
+  * Fix conflicts between cross and regular gdb (Closes: #603347)
+    - Pass --gdb-datadir=/usr/share/gdb-$triplet when building a cross-gdb and
+      update gdb.install sed snippet to match; fixes conflict with gdb;
+    - Thanks Loïc Minier.
+
+ -- Hector Oron <zumbi@debian.org>  Thu, 17 Nov 2011 18:37:45 +0000
+
+gdb (7.4-1~cvs20111117) experimental; urgency=low
+
+  * CVS snapshot release (20111117)
+  * debian/control.in: Stop using deprecated type-handling Build-Depends
+    Thanks Guillem Jover. (Closes: #639164)
+  * debian/control.in: Mention D language support in description
+    - Also mention other supported languages. (Closes: #595892)
+  * debian/control.in: Add Vcs-Git, Vcs-Browser and Homepage fields.
+  * debian/control.in: Bump Standards-Version
+
+ -- Hector Oron <zumbi@debian.org>  Wed, 24 Aug 2011 20:02:33 +0100
+
+gdb (7.3-1) unstable; urgency=low
+
+  * New upstream release, including:
+    - Initial OpenCL C language support has been added
+    - C++ enhancements:
+       * Template parameters are now in scope when debugging in an
+         instantiation
+       * The motion commands "next", "finish", "until", and "advance" now
+         work better when exceptions are thrown
+    - Improved Python support, enhancing the existing APIs as well as
+      introducing new ones.
+    - Improved thread debugging support:
+       * GDB now understands thread names
+       * A new command "thread find [REGEXP]" has been added
+    - GDBserver enhancements:
+       * Support for PowerPC LynxOS (versions 4.x and 5.x) and i686 LynxOS
+         (version 5.x)
+       * Support for Blackfin Linux
+    - Support for reading and writing a new .gdb_index section,
+      containing a fast index of DWARF debugging info
+    - Various GDB/MI improvements
+    - Support for ia64 HP-UX (ia64-*-hpux*) has been added
+    - Target support for Analog Devices, Inc. Blackfin Processors (bfin-*)
+    - GNU simulator improvements:
+       * New --map-info flag
+       * CFI flash simulation support
+    - Other worthy improvments (in random order):
+      * The "catch syscall" command is now available on mips-linux.
+      * New GDB Commands: "set directories"
+      * Support for using labels in linespecs (Eg you can use "advance label")
+      * The "watch" command now accepts an optional "-location" argument
+      * Thread debugging of core dumps now supported on GNU/Linux
+      * Ranged breakpoints support (PowerPC BookE running Linux 2.6.34 or later)
+      * Support for Ada task switching inside programs using the Ravenscar profile
+    - See gdb/NEWS for more detailed information.  
+
+ -- Hector Oron <zumbi@debian.org>  Tue, 23 Aug 2011 11:13:36 +0100
+
+gdb (7.3.50~cvs20110627-2) experimental; urgency=low
+
+  * Restrict prelink build depend to linux-any architectures.
+  * Fix cross-build target:
+    - Set DEB_BUILD_GNU_TYPE and use it for --build= instead of
+    DEB_HOST_GNU_TYPE; Thanks Loïc Minier (Closes: #601028)
+  * Add preliminary support for armhf.
+    - Thanks Konstantinos Margaritis (Closes: #596953)
+
+ -- Hector Oron <zumbi@debian.org>  Tue, 05 Jul 2011 22:37:20 +0100
+
+gdb (7.3.50~cvs20110627-1) experimental; urgency=low
+
+  * Upstream pre-release based on CVS date 20110627.
+  * Drop Daniel Jacobowitz as Maintainer.
+      - Thanks for all this years. 
+  * Add myself as Maintainer.
+  * Bump standards version.
+  * Add local-option for unapply-patches.
+  * Add prelink build depend, needed for tests run. 
+
+ -- Hector Oron <zumbi@debian.org>  Tue, 28 Jun 2011 10:30:52 +0100
+
+gdb (7.2-1) unstable; urgency=low
+
+  * New upstream release, including:
+    - C++ improvements including argument-dependent lookup, improved
+      user-defined operator support, and static const member evaluation.
+    - Expanded Python API.
+    - Tracepoint improvements, including x86 gdbserver support for tracepoints
+      and static tracepoints.
+    - Observer mode support.  You can attach to a program in observer mode
+      and GDB will not allow you to modify the program's state at all.
+    - x86 byte and half-word register names, and 32-bit register named
+      on 64-bit targets.
+    - The "eval" command for the GDB CLI.
+    - "save breakpoints" to save breakpoints between sessions.
+    - Improved hardware breakpoint support for PowerPC.
+
+ -- Daniel Jacobowitz <dan@debian.org>  Sun, 05 Sep 2010 10:05:31 -0400
+
+gdb (7.1-2) unstable; urgency=low
+
+  * Add sanitize-gdb.sh and README.source to source package (used to create
+    tarballs).
+  * Fix cross-gdb build.  Patch from Hector Oron.  (Closes: #575923).
+
+ -- Daniel Jacobowitz <dan@debian.org>  Tue, 31 Aug 2010 10:57:57 -0400
+
+gdb (7.1-1) unstable; urgency=low
+
+  * New upstream release, including:
+    - PIE support (Closes: #346409).
+    - C++ improvements, including static_cast<> et al, namespace imports,
+      and bug fixes in printing virtual base classes.
+    - Multi-program debugging.  One GDB can now debug multiple programs
+      at the same time.
+    - Python scripting improvements, including gdb.parse_and_eval.
+    - Updated MIPS Linux signal frame layout (Closes: #570875).
+    - No internal error stepping over _dl_debug_state (Closes: #569551).
+  * Update to Standards-Version: 3.8.4 (no changes required).
+  * Include more relevant (and smaller) docs in the gdbserver package
+    (Closes: #571132).
+  * Do not duplicate documentation in gdb64, gdb-source, and libgdb-dev.
+  * Fix crash when switching into TUI mode (Closes: #568489).
+
+ -- Daniel Jacobowitz <dan@debian.org>  Sat, 20 Mar 2010 01:21:29 -0400
+
 gdb (7.0.1-2) unstable; urgency=low
 
   * Add Replaces to the new gdbserver package (Closes: #567925, #568018).

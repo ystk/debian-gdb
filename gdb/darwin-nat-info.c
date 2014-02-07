@@ -1,6 +1,5 @@
 /* Darwin support for GDB, the GNU debugger.
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2008
-   Free Software Foundation, Inc.
+   Copyright 1997-2002, 2008-2012 Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
 
@@ -8,7 +7,7 @@
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
+   the Free Software Foundation; either version 3 of the License, or
    (at your option) any later version.
 
    This program is distributed in the hope that it will be useful,
@@ -17,9 +16,7 @@
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.  */
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 /* The name of the ppc_thread_state structure, and the names of its
    members, have been changed for Unix conformance reasons.  The easiest
@@ -53,7 +50,7 @@
 
 #define CHECK_ARGS(what, args) do { \
   if ((NULL == args) || ((args[0] != '0') && (args[1] != 'x'))) \
-    error("%s must be specified with 0x...", what);		\
+    error(_("%s must be specified with 0x..."), what);		\
 } while (0)
 
 #define PRINT_FIELD(structure, field) \
@@ -546,7 +543,7 @@ darwin_debug_regions (task_t task, mach_vm_address_t address, int max)
 
       address = prev_address + prev_size;
 
-      /* Check to see if address space has wrapped around. */
+      /* Check to see if address space has wrapped around.  */
       if (address == 0)
         print = done = 1;
 
@@ -622,6 +619,7 @@ darwin_debug_regions_recurse (task_t task)
   kern_return_t kret;
   int ret;
   struct cleanup *table_chain;
+  struct ui_out *uiout = current_uiout;
 
   table_chain = make_cleanup_ui_out_table_begin_end (uiout, 9, -1, "regions");
 
@@ -819,7 +817,7 @@ info_mach_exceptions_command (char *args, int from_tty)
 	}
       else if (strcmp (args, "host") == 0)
 	{
-	  /* FIXME: This need a the privilegied host port!  */
+	  /* FIXME: This need a privilegied host port!  */
 	  kret = host_get_exception_ports
 	    (darwin_host_self, EXC_MASK_ALL, info.masks,
 	     &info.count, info.ports, info.behaviors, info.flavors);
@@ -843,32 +841,6 @@ info_mach_exceptions_command (char *args, int from_tty)
       MACH_CHECK_ERROR (kret);
       disp_exception (&info);
     }
-}
-
-static void
-darwin_list_gdb_ports (const char *msg)
-{
-  mach_port_name_array_t names;
-  mach_port_type_array_t types;
-  unsigned int name_count, type_count;
-  kern_return_t result;
-  int i;
-
-  result = mach_port_names (mach_task_self (),
-			    &names, &name_count, &types, &type_count);
-  MACH_CHECK_ERROR (result);
-
-  gdb_assert (name_count == type_count);
-
-  printf_unfiltered (_("Ports for %s:"), msg);
-  for (i = 0; i < name_count; ++i)
-    printf_unfiltered (_(" 0x%04x"), names[i]);
-  printf_unfiltered (_("\n"));
-
-  vm_deallocate (mach_task_self (), (vm_address_t) names,
-                 (name_count * sizeof (mach_port_t)));
-  vm_deallocate (mach_task_self (), (vm_address_t) types,
-                 (type_count * sizeof (mach_port_type_t)));
 }
 
 void

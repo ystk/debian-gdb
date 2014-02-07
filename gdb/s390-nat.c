@@ -1,6 +1,6 @@
 /* S390 native-dependent code for GDB, the GNU debugger.
-   Copyright (C) 2001, 2003, 2004, 2005, 2006
-   Free Software Foundation, Inc
+   Copyright (C) 2001, 2003-2007, 2009, 2012 Free Software Foundation,
+   Inc.
 
    Contributed by D.J. Barrow (djbarrow@de.ibm.com,barrow_dj@yahoo.com)
    for IBM Deutschland Entwicklung GmbH, IBM Corporation.
@@ -25,15 +25,32 @@
 #include "inferior.h"
 #include "target.h"
 #include "linux-nat.h"
+#include "auxv.h"
 
 #include "s390-tdep.h"
+#include "elf/common.h"
 
 #include <asm/ptrace.h>
 #include <sys/ptrace.h>
 #include <asm/types.h>
 #include <sys/procfs.h>
 #include <sys/ucontext.h>
+#include <elf.h>
 
+#ifndef HWCAP_S390_HIGH_GPRS
+#define HWCAP_S390_HIGH_GPRS 512
+#endif
+
+#ifndef PTRACE_GETREGSET
+#define PTRACE_GETREGSET 0x4204
+#endif
+
+#ifndef PTRACE_SETREGSET
+#define PTRACE_SETREGSET 0x4205
+#endif
+
+static int have_regset_last_break = 0;
+static int have_regset_system_call = 0;
 
 /* Map registers to gregset/ptrace offsets.
    These arrays are defined in s390-tdep.c.  */
@@ -49,28 +66,124 @@
 /* When debugging a 32-bit executable running under a 64-bit kernel,
    we have to fix up the 64-bit registers we get from the kernel
    to make them look like 32-bit registers.  */
+
+static void
+s390_native_supply (struct regcache *regcache, int regno,
+		    const gdb_byte *regp, int *regmap)
+{
+  int offset = regmap[regno];
+
 #ifdef __s390x__
-#define SUBOFF(gdbarch, i) \
-	((gdbarch_ptr_bit (gdbarch) == 32 \
-	  && ((i) == S390_PSWA_REGNUM \
-	      || ((i) >= S390_R0_REGNUM && (i) <= S390_R15_REGNUM)))? 4 : 0)
-#else
-#define SUBOFF(gdbarch, i) 0
+  struct gdbarch *gdbarch = get_regcache_arch (regcache);
+  if (offset != -1 && gdbarch_ptr_bit (gdbarch) == 32)
+    {
+      enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+
+      if (regno == S390_PSWM_REGNUM)
+	{
+	  ULONGEST pswm;
+	  gdb_byte buf[4];
+
+	  pswm = extract_unsigned_integer (regp + regmap[S390_PSWM_REGNUM],
+					   8, byte_order);
+
+	  store_unsigned_integer (buf, 4, byte_order, (pswm >> 32) | 0x80000);
+	  regcache_raw_supply (regcache, regno, buf);
+	  return;
+	}
+
+      if (regno == S390_PSWA_REGNUM)
+	{
+	  ULONGEST pswm, pswa;
+	  gdb_byte buf[4];
+
+	  pswa = extract_unsigned_integer (regp + regmap[S390_PSWA_REGNUM],
+					   8, byte_order);
+	  pswm = extract_unsigned_integer (regp + regmap[S390_PSWM_REGNUM],
+					   8, byte_order);
+
+	  store_unsigned_integer (buf, 4, byte_order,
+				  (pswa & 0x7fffffff) | (pswm & 0x80000000));
+	  regcache_raw_supply (regcache, regno, buf);
+	  return;
+	}
+
+      if ((regno >= S390_R0_REGNUM && regno <= S390_R15_REGNUM)
+	  || regno == S390_ORIG_R2_REGNUM)
+	offset += 4;
+    }
 #endif
 
+  if (offset != -1)
+    regcache_raw_supply (regcache, regno, regp + offset);
+}
+
+static void
+s390_native_collect (const struct regcache *regcache, int regno,
+		     gdb_byte *regp, int *regmap)
+{
+  int offset = regmap[regno];
+
+#ifdef __s390x__
+  struct gdbarch *gdbarch = get_regcache_arch (regcache);
+  if (offset != -1 && gdbarch_ptr_bit (gdbarch) == 32)
+    {
+      enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+
+      if (regno == S390_PSWM_REGNUM)
+	{
+	  ULONGEST pswm;
+	  gdb_byte buf[4];
+
+	  regcache_raw_collect (regcache, regno, buf);
+	  pswm = extract_unsigned_integer (buf, 4, byte_order);
+
+	  /* We don't know the final addressing mode until the PSW address
+	     is known, so leave it as-is.  When the PSW address is collected
+	     (below), the addressing mode will be updated.  */
+	  store_unsigned_integer (regp + regmap[S390_PSWM_REGNUM],
+				  4, byte_order, pswm & 0xfff7ffff);
+	  return;
+	}
+
+      if (regno == S390_PSWA_REGNUM)
+	{
+	  ULONGEST pswa;
+	  gdb_byte buf[4];
+
+	  regcache_raw_collect (regcache, regno, buf);
+	  pswa = extract_unsigned_integer (buf, 4, byte_order);
+
+	  store_unsigned_integer (regp + regmap[S390_PSWA_REGNUM],
+				  8, byte_order, pswa & 0x7fffffff);
+
+	  /* Update basic addressing mode bit in PSW mask, see above.  */
+	  store_unsigned_integer (regp + regmap[S390_PSWM_REGNUM] + 4,
+				  4, byte_order, pswa & 0x80000000);
+	  return;
+	}
+
+      if ((regno >= S390_R0_REGNUM && regno <= S390_R15_REGNUM)
+	  || regno == S390_ORIG_R2_REGNUM)
+	{
+	  memset (regp + offset, 0, 4);
+	  offset += 4;
+	}
+    }
+#endif
+
+  if (offset != -1)
+    regcache_raw_collect (regcache, regno, regp + offset);
+}
 
 /* Fill GDB's register array with the general-purpose register values
    in *REGP.  */
 void
 supply_gregset (struct regcache *regcache, const gregset_t *regp)
 {
-  struct gdbarch *gdbarch = get_regcache_arch (regcache);
   int i;
   for (i = 0; i < S390_NUM_REGS; i++)
-    if (regmap_gregset[i] != -1)
-      regcache_raw_supply (regcache, i, 
-			   (const char *)regp + regmap_gregset[i]
-			     + SUBOFF (gdbarch, i));
+    s390_native_supply (regcache, i, (const gdb_byte *) regp, regmap_gregset);
 }
 
 /* Fill register REGNO (if it is a general-purpose register) in
@@ -79,14 +192,10 @@ supply_gregset (struct regcache *regcache, const gregset_t *regp)
 void
 fill_gregset (const struct regcache *regcache, gregset_t *regp, int regno)
 {
-  struct gdbarch *gdbarch = get_regcache_arch (regcache);
   int i;
   for (i = 0; i < S390_NUM_REGS; i++)
-    if (regmap_gregset[i] != -1)
-      if (regno == -1 || regno == i)
-	regcache_raw_collect (regcache, i, 
-			      (char *)regp + regmap_gregset[i]
-				+ SUBOFF (gdbarch, i));
+    if (regno == -1 || regno == i)
+      s390_native_collect (regcache, i, (gdb_byte *) regp, regmap_gregset);
 }
 
 /* Fill GDB's register array with the floating-point register values
@@ -96,9 +205,7 @@ supply_fpregset (struct regcache *regcache, const fpregset_t *regp)
 {
   int i;
   for (i = 0; i < S390_NUM_REGS; i++)
-    if (regmap_fpregset[i] != -1)
-      regcache_raw_supply (regcache, i,
-			   (const char *)regp + regmap_fpregset[i]);
+    s390_native_supply (regcache, i, (const gdb_byte *) regp, regmap_fpregset);
 }
 
 /* Fill register REGNO (if it is a general-purpose register) in
@@ -109,10 +216,8 @@ fill_fpregset (const struct regcache *regcache, fpregset_t *regp, int regno)
 {
   int i;
   for (i = 0; i < S390_NUM_REGS; i++)
-    if (regmap_fpregset[i] != -1)
-      if (regno == -1 || regno == i)
-        regcache_raw_collect (regcache, i, 
-			      (char *)regp + regmap_fpregset[i]);
+    if (regno == -1 || regno == i)
+      s390_native_collect (regcache, i, (gdb_byte *) regp, regmap_fpregset);
 }
 
 /* Find the TID for the current inferior thread to use with ptrace.  */
@@ -201,6 +306,70 @@ store_fpregs (const struct regcache *regcache, int tid, int regnum)
     perror_with_name (_("Couldn't write floating point status"));
 }
 
+/* Fetch all registers in the kernel's register set whose number is REGSET,
+   whose size is REGSIZE, and whose layout is described by REGMAP, from
+   process/thread TID and store their values in GDB's register cache.  */
+static void
+fetch_regset (struct regcache *regcache, int tid,
+	      int regset, int regsize, int *regmap)
+{
+  struct gdbarch *gdbarch = get_regcache_arch (regcache);
+  gdb_byte *buf = alloca (regsize);
+  struct iovec iov;
+  int i;
+
+  iov.iov_base = buf;
+  iov.iov_len = regsize;
+
+  if (ptrace (PTRACE_GETREGSET, tid, (long) regset, (long) &iov) < 0)
+    perror_with_name (_("Couldn't get register set"));
+
+  for (i = 0; i < S390_NUM_REGS; i++)
+    s390_native_supply (regcache, i, buf, regmap);
+}
+
+/* Store all registers in the kernel's register set whose number is REGSET,
+   whose size is REGSIZE, and whose layout is described by REGMAP, from
+   GDB's register cache back to process/thread TID.  */
+static void
+store_regset (struct regcache *regcache, int tid,
+	      int regset, int regsize, int *regmap)
+{
+  struct gdbarch *gdbarch = get_regcache_arch (regcache);
+  gdb_byte *buf = alloca (regsize);
+  struct iovec iov;
+  int i;
+
+  iov.iov_base = buf;
+  iov.iov_len = regsize;
+
+  if (ptrace (PTRACE_GETREGSET, tid, (long) regset, (long) &iov) < 0)
+    perror_with_name (_("Couldn't get register set"));
+
+  for (i = 0; i < S390_NUM_REGS; i++)
+    s390_native_collect (regcache, i, buf, regmap);
+
+  if (ptrace (PTRACE_SETREGSET, tid, (long) regset, (long) &iov) < 0)
+    perror_with_name (_("Couldn't set register set"));
+}
+
+/* Check whether the kernel provides a register set with number REGSET
+   of size REGSIZE for process/thread TID.  */
+static int
+check_regset (int tid, int regset, int regsize)
+{
+  gdb_byte *buf = alloca (regsize);
+  struct iovec iov;
+
+  iov.iov_base = buf;
+  iov.iov_len = regsize;
+
+  if (ptrace (PTRACE_GETREGSET, tid, (long) regset, (long) &iov) < 0)
+    return 0;
+  else
+    return 1;
+}
+
 /* Fetch register REGNUM from the child process.  If REGNUM is -1, do
    this for all registers.  */
 static void
@@ -216,6 +385,17 @@ s390_linux_fetch_inferior_registers (struct target_ops *ops,
   if (regnum == -1 
       || (regnum < S390_NUM_REGS && regmap_fpregset[regnum] != -1))
     fetch_fpregs (regcache, tid);
+
+  if (have_regset_last_break)
+    if (regnum == -1 || regnum == S390_LAST_BREAK_REGNUM)
+      fetch_regset (regcache, tid, NT_S390_LAST_BREAK, 8,
+		    (gdbarch_ptr_bit (get_regcache_arch (regcache)) == 32
+		     ? s390_regmap_last_break : s390x_regmap_last_break));
+
+  if (have_regset_system_call)
+    if (regnum == -1 || regnum == S390_SYSTEM_CALL_REGNUM)
+      fetch_regset (regcache, tid, NT_S390_SYSTEM_CALL, 4,
+		    s390_regmap_system_call);
 }
 
 /* Store register REGNUM back into the child process.  If REGNUM is
@@ -233,6 +413,13 @@ s390_linux_store_inferior_registers (struct target_ops *ops,
   if (regnum == -1 
       || (regnum < S390_NUM_REGS && regmap_fpregset[regnum] != -1))
     store_fpregs (regcache, tid, regnum);
+
+  /* S390_LAST_BREAK_REGNUM is read-only.  */
+
+  if (have_regset_system_call)
+    if (regnum == -1 || regnum == S390_SYSTEM_CALL_REGNUM)
+      store_regset (regcache, tid, NT_S390_SYSTEM_CALL, 4,
+		    s390_regmap_system_call);
 }
 
 
@@ -329,10 +516,10 @@ s390_fix_watch_points (ptid_t ptid)
 }
 
 static int
-s390_insert_watchpoint (CORE_ADDR addr, int len, int type)
+s390_insert_watchpoint (CORE_ADDR addr, int len, int type,
+			struct expression *cond)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
   struct watch_area *area = xmalloc (sizeof (struct watch_area));
 
   if (!area)
@@ -344,16 +531,16 @@ s390_insert_watchpoint (CORE_ADDR addr, int len, int type)
   area->next = watch_base;
   watch_base = area;
 
-  ALL_LWPS (lp, ptid)
-    s390_fix_watch_points (ptid);
+  ALL_LWPS (lp)
+    s390_fix_watch_points (lp->ptid);
   return 0;
 }
 
 static int
-s390_remove_watchpoint (CORE_ADDR addr, int len, int type)
+s390_remove_watchpoint (CORE_ADDR addr, int len, int type,
+			struct expression *cond)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
   struct watch_area *area, **parea;
 
   for (parea = &watch_base; *parea; parea = &(*parea)->next)
@@ -372,15 +559,15 @@ s390_remove_watchpoint (CORE_ADDR addr, int len, int type)
   *parea = area->next;
   xfree (area);
 
-  ALL_LWPS (lp, ptid)
-    s390_fix_watch_points (ptid);
+  ALL_LWPS (lp)
+    s390_fix_watch_points (lp->ptid);
   return 0;
 }
 
 static int
 s390_can_use_hw_breakpoint (int type, int cnt, int othertype)
 {
-  return 1;
+  return type == bp_hardware_watchpoint;
 }
 
 static int
@@ -389,6 +576,96 @@ s390_region_ok_for_hw_watchpoint (CORE_ADDR addr, int cnt)
   return 1;
 }
 
+static int
+s390_target_wordsize (void)
+{
+  int wordsize = 4;
+
+  /* Check for 64-bit inferior process.  This is the case when the host is
+     64-bit, and in addition bit 32 of the PSW mask is set.  */
+#ifdef __s390x__
+  long pswm;
+
+  errno = 0;
+  pswm = (long) ptrace (PTRACE_PEEKUSER, s390_inferior_tid (), PT_PSWMASK, 0);
+  if (errno == 0 && (pswm & 0x100000000ul) != 0)
+    wordsize = 8;
+#endif
+
+  return wordsize;
+}
+
+static int
+s390_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
+		 gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
+{
+  int sizeof_auxv_field = s390_target_wordsize ();
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  gdb_byte *ptr = *readptr;
+
+  if (endptr == ptr)
+    return 0;
+
+  if (endptr - ptr < sizeof_auxv_field * 2)
+    return -1;
+
+  *typep = extract_unsigned_integer (ptr, sizeof_auxv_field, byte_order);
+  ptr += sizeof_auxv_field;
+  *valp = extract_unsigned_integer (ptr, sizeof_auxv_field, byte_order);
+  ptr += sizeof_auxv_field;
+
+  *readptr = ptr;
+  return 1;
+}
+
+#ifdef __s390x__
+static unsigned long
+s390_get_hwcap (void)
+{
+  CORE_ADDR field;
+
+  if (target_auxv_search (&current_target, AT_HWCAP, &field))
+    return (unsigned long) field;
+
+  return 0;
+}
+#endif
+
+static const struct target_desc *
+s390_read_description (struct target_ops *ops)
+{
+  int tid = s390_inferior_tid ();
+
+  have_regset_last_break
+    = check_regset (tid, NT_S390_LAST_BREAK, 8);
+  have_regset_system_call
+    = check_regset (tid, NT_S390_SYSTEM_CALL, 4);
+
+#ifdef __s390x__
+  /* If GDB itself is compiled as 64-bit, we are running on a machine in
+     z/Architecture mode.  If the target is running in 64-bit addressing
+     mode, report s390x architecture.  If the target is running in 31-bit
+     addressing mode, but the kernel supports using 64-bit registers in
+     that mode, report s390 architecture with 64-bit GPRs.  */
+
+  if (s390_target_wordsize () == 8)
+    return (have_regset_system_call? tdesc_s390x_linux64v2 :
+	    have_regset_last_break? tdesc_s390x_linux64v1 :
+	    tdesc_s390x_linux64);
+
+  if (s390_get_hwcap () & HWCAP_S390_HIGH_GPRS)
+    return (have_regset_system_call? tdesc_s390_linux64v2 :
+	    have_regset_last_break? tdesc_s390_linux64v1 :
+	    tdesc_s390_linux64);
+#endif
+
+  /* If GDB itself is compiled as 31-bit, or if we're running a 31-bit inferior
+     on a 64-bit kernel that does not support using 64-bit registers in 31-bit
+     mode, report s390 architecture with 32-bit GPRs.  */
+  return (have_regset_system_call? tdesc_s390_linux32v2 :
+	  have_regset_last_break? tdesc_s390_linux32v1 :
+	  tdesc_s390_linux32);
+}
 
 void _initialize_s390_nat (void);
 
@@ -411,6 +688,10 @@ _initialize_s390_nat (void)
   t->to_stopped_by_watchpoint = s390_stopped_by_watchpoint;
   t->to_insert_watchpoint = s390_insert_watchpoint;
   t->to_remove_watchpoint = s390_remove_watchpoint;
+
+  /* Detect target architecture.  */
+  t->to_read_description = s390_read_description;
+  t->to_auxv_parse = s390_auxv_parse;
 
   /* Register the target.  */
   linux_nat_add_target (t);

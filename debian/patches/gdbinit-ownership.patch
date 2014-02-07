@@ -2,112 +2,69 @@ This patch was not popular upstream; there was no fundamental objection, but
 several problems with the implementation.  It needs to be revisited.
 
 ---
- gdb/cli/cli-cmds.c |   44 ++++++++++++++++++++++++++++++++++++++++----
+ gdb/cli/cli-cmds.c |   42 +++++++++++++++++++++++++++++++++++++++++-
  gdb/main.c         |    4 ++--
- 2 files changed, 42 insertions(+), 6 deletions(-)
+ 2 files changed, 43 insertions(+), 3 deletions(-)
 
-Index: gdb-7.0.1/gdb/cli/cli-cmds.c
+Index: gdb-7.4/gdb/cli/cli-cmds.c
 ===================================================================
---- gdb-7.0.1.orig/gdb/cli/cli-cmds.c	2010-01-30 16:23:17.000000000 -0500
-+++ gdb-7.0.1/gdb/cli/cli-cmds.c	2010-01-30 16:24:35.000000000 -0500
-@@ -37,6 +37,7 @@
- #include "objfiles.h"
- #include "source.h"
- #include "disasm.h"
+--- gdb-7.4.orig/gdb/cli/cli-cmds.c	2011-11-17 15:58:35.000000000 +0000
++++ gdb-7.4/gdb/cli/cli-cmds.c	2011-11-17 17:03:20.505359078 +0000
+@@ -55,6 +55,8 @@
+ #include "tui/tui.h"	/* For tui_active et.al.  */
+ #endif
+ 
 +#include "gdb_stat.h"
- 
- #include "ui-out.h"
- 
-@@ -437,6 +438,10 @@ cd_command (char *dir, int from_tty)
-     pwd_command ((char *) 0, 1);
- }
- 
-+/* Load a GDB command file whose name is given in ARGS.  FROM_TTY may
-+   be -1, in which case we are loading a gdbinit file; in that case,
-+   be paranoid about unsafe files.  */
 +
- void
- source_script (char *file, int from_tty)
- {
-@@ -446,9 +451,7 @@ source_script (char *file, int from_tty)
-   int fd;
+ #include <fcntl.h>
  
-   if (file == NULL || *file == 0)
--    {
--      error (_("source command requires file name of file to source."));
--    }
-+    error (_("source command requires file name of file to source."));
- 
-   file = tilde_expand (file);
-   old_cleanups = make_cleanup (xfree, file);
-@@ -467,7 +470,7 @@ source_script (char *file, int from_tty)
- 
-   if (fd == -1)
-     {
+ /* Prototypes for local command functions */
+@@ -585,13 +587,47 @@
+          If the source command was invoked interactively, throw an
+ 	 error.  Otherwise (e.g. if it was invoked by a script),
+ 	 silently ignore the error.  */
 -      if (from_tty)
++      /* Or, if this was an automatic load during startup, ignore the
++        error.  */
 +      if (from_tty > 0)
  	perror_with_name (file);
        else
- 	{
-@@ -477,6 +480,39 @@ source_script (char *file, int from_tty)
+ 	return;
      }
  
-   stream = fdopen (fd, FOPEN_RT);
+   old_cleanups = make_cleanup (xfree, full_path);
 +
 +  if (stream == NULL)
 +    {
 +      if (from_tty)
-+	perror_with_name (file);
++       perror_with_name (file);
 +      else
-+	{
-+	  do_cleanups (old_cleanups);
-+	  return;
-+	}
++       {
++         do_cleanups (old_cleanups);
++         return;
++       }
 +    }
 +
 +#ifdef HAVE_GETUID
 +  if (from_tty == -1)
 +    {
-+     struct stat statbuf;
++      struct stat statbuf;
++      int fd = fileno (stream);
 +      if (fstat (fd, &statbuf) < 0)
-+	{
-+	  perror_with_name (file);
-+	  fclose (stream);
-+	  do_cleanups (old_cleanups);
-+	  return;
-+	}
++       {
++         make_cleanup_fclose (stream);
++         perror_with_name (file);
++       }
 +      if (statbuf.st_uid != getuid () || (statbuf.st_mode & S_IWOTH))
-+	{
-+	  warning ("not using untrusted file \"%s\"", file);
-+	  fclose (stream);
-+	  do_cleanups (old_cleanups);
-+	  return;
-+	}
++       {
++         warning ("not using untrusted file \"%s\"", file);
++         fclose (stream);
++         do_cleanups (old_cleanups);
++         return;
++       }
 +    }
 +#endif
 +
-   script_from_file (stream, file);
- 
-   do_cleanups (old_cleanups);
-Index: gdb-7.0.1/gdb/main.c
-===================================================================
---- gdb-7.0.1.orig/gdb/main.c	2010-01-30 16:23:17.000000000 -0500
-+++ gdb-7.0.1/gdb/main.c	2010-01-30 16:24:35.000000000 -0500
-@@ -781,7 +781,7 @@ Excess command line arguments ignored. (
-      debugging or what directory you are in.  */
- 
-   if (home_gdbinit && !inhibit_gdbinit)
--    catch_command_errors (source_script, home_gdbinit, 0, RETURN_MASK_ALL);
-+    catch_command_errors (source_script, home_gdbinit, -1, RETURN_MASK_ALL);
- 
-   /* Now perform all the actions indicated by the arguments.  */
-   if (cdarg != NULL)
-@@ -850,7 +850,7 @@ Can't attach to process and specify a co
-   /* Read the .gdbinit file in the current directory, *if* it isn't
-      the same as the $HOME/.gdbinit file (it should exist, also).  */
-   if (local_gdbinit && !inhibit_gdbinit)
--    catch_command_errors (source_script, local_gdbinit, 0, RETURN_MASK_ALL);
-+    catch_command_errors (source_script, local_gdbinit, -1, RETURN_MASK_ALL);
- 
-   for (i = 0; i < ncmd; i++)
-     {
+   /* The python support reopens the file, so we need to pass full_path here
+      in case the file was found on the search path.  It's useful to do this
+      anyway so that error messages show the actual file used.  But only do

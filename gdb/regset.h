@@ -1,6 +1,6 @@
 /* Manage register sets.
 
-   Copyright (C) 2003, 2004, 2007, 2008, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2003-2004, 2007-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,6 +28,7 @@ struct core_regset_section
 {
   const char *sect_name;
   int size;
+  const char *human_name;
 };
 
 /* Data structure describing a register set.  */
