@@ -4,7 +4,12 @@ ALL_BUILDDIR := $(shell pwd)/build
 
 DEB_BUILDDIR := $(ALL_BUILDDIR)/objdir
 DEB_DH_INSTALL_SOURCEDIR := $(shell pwd)/debian/tmp
-#DEB_DH_STRIP_ARGS := --dbg-package=gdb-dbg
+DEB_DH_STRIP_ARGS_GDB := --dbg-package=gdb-dbg
+
+# Override CDBS's default CFLAGS, which also includes -Wall; gdb
+# does not handle -Wunused well with -Werror, but defaults to
+# -Werror.
+DEB_WARNING_FLAGS :=
 
 # This implements the .deb package creation using debhelper.
 include /usr/share/cdbs/1/rules/debhelper.mk
@@ -12,10 +17,9 @@ include /usr/share/cdbs/1/rules/debhelper.mk
 # This implements building using a configure script and Makefile.
 include /usr/share/cdbs/1/class/autotools.mk
 
-# Override CDBS's default CFLAGS, which also includes -Wall; gdb
-# does not handle -Wunused well with -Werror, but defaults to
-# -Werror.
-CFLAGS = -g $(DEB_OPT_FLAG)
+# The top-level configure script fails to pass these down properly ...
+export CPPFLAGS
+export LDFLAGS
 
 # Always install into debian/tmp, even if we are only building one package.
 DEB_DESTDIR := $(shell pwd)/debian/tmp
@@ -85,11 +89,14 @@ ifneq (,$(filter $(DEB_HOST_ARCH),i386 powerpc sparc s390))
 endif
 endif
 
+distribution := $(shell lsb_release -is)
+deb_version := $(shell dpkg-parsechangelog | awk '/^Version:/ {print $$2}')
+
 BUILDDIRMULTIARCH = $(ALL_BUILDDIR)/objdir-multiarch
 
 run_tests := yes
 
-ifneq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+ifneq (,$(filter nocheck, $(DEB_BUILD_OPTIONS)))
   run_tests := no
 endif
 
@@ -98,7 +105,7 @@ ifeq (,$(findstring linux, $(DEB_HOST_GNU_SYSTEM)))
 endif
 
 ifeq ($(DEB_HOST_GNU_CPU),ia64)
-  arch_config_args := --with-libunwind
+  arch_config_args := --with-libunwind-ia64
 endif
 
 ifdef GDB_TARGET
@@ -118,13 +125,19 @@ export INSTALL
 # We pass srcdir explicitly to avoid an extra '/.' at the end of it.  That
 # causes a harmless, but ugly, testsuite failure in maint.exp.
 EXTRA_FLAGS := --disable-gdbtk --disable-shared \
-	--srcdir=$(shell pwd) --with-system-readline \
+	--with-pkgversion='$(distribution) $(deb_version)' \
+	--srcdir=$(shell pwd) \
+	--disable-readline --with-system-readline --with-expat \
+	--without-zlib --without-lzma \
+	--without-guile \
 	$(arch_config_args) --build=$(DEB_BUILD_GNU_TYPE)
 
-# Debian does not include 64-bit expat packages yet, so --with-expat
-# is here rather than in EXTRA_FLAGS.  Similarly Python.
+# Debian does not include 64-bit Python packages, so --with-python
+# is here rather than in EXTRA_FLAGS.
 DEB_CONFIGURE_EXTRA_FLAGS := --host=$(DEB_HOST_GNU_TYPE) $(EXTRA_FLAGS) \
-	--enable-tui --with-expat --with-python
+	--enable-tui --with-python=python2 --without-babeltrace \
+	--with-zlib --with-lzma
+# --with-babeltrace
 
 # 64-bit flags
 DEB_CONFIGURE_FLAGS_64 := --host=$(HOST64) $(EXTRA_FLAGS) \
@@ -133,42 +146,46 @@ DEB_CONFIGURE_FLAGS_64 := --host=$(HOST64) $(EXTRA_FLAGS) \
 # multiarch targets; this is taken from the binutils-multiarch package but
 # doesn't seem like a terribly nice list; see
 # <20110117211551.GA7216@bee.dooz.org> for discussion -- locally updated
-#MULTIARCH_TARGETS := \
-#	alpha-linux-gnu \
-#	arm-linux-gnu \
-#	arm-linux-gnueabi \
-#	arm-linux-gnueabihf \
-#	hppa-linux-gnu \
-#	i686-linux-gnu \
-#	ia64-linux-gnu \
-#	m68k-linux-gnu \
-#	m68k-rtems \
-#	mips-linux-gnu \
-#	mipsel-linux-gnu \
-#	mips64-linux-gnu \
-#	mips64el-linux-gnu \
-#	powerpc-linux-gnu \
-#	powerpcspe-linux-gnu \
-#	ppc64-linux-gnu \
-#	s390-linux-gnu \
-#	s390x-linux-gnu \
-#	sh-linux-gnu \
-#	sh64-linux-gnu \
-#	sparc-linux-gnu \
-#	sparc64-linux-gnu \
-#	x86_64-linux-gnu \
-#	m32r-linux-gnu \
-#	spu
-#	--enable-targets=`set -- $(MULTIARCH_TARGETS); IFS=,; echo "$$*"`
-MULTIARCH_TARGETS := all
+MULTIARCH_TARGETS := \
+	aarch64-linux-gnu \
+	alpha-linux-gnu \
+	arm-linux-gnu \
+	arm-linux-gnueabi \
+	arm-linux-gnueabihf \
+	hppa-linux-gnu \
+	i686-linux-gnu \
+	ia64-linux-gnu \
+	m68k-linux-gnu \
+	m68k-rtems \
+	mips-linux-gnu \
+	mipsel-linux-gnu \
+	mips64-linux-gnu \
+	mips64el-linux-gnu \
+	powerpc-linux-gnu \
+	powerpc-linux-gnuspe \
+	ppc64-linux-gnu \
+	s390-linux-gnu \
+	s390x-linux-gnu \
+	sh-linux-gnu \
+	sh64-linux-gnu \
+	sparc-linux-gnu \
+	sparc64-linux-gnu \
+	x86_64-linux-gnu \
+	m32r-linux-gnu \
+	spu
+
+# broken, see https://launchpad.net/bugs/1233185
+#MULTIARCH_TARGETS := all
+#	--enable-targets=$(MULTIARCH_TARGETS) \
 # multiarch flags
 DEB_CONFIGURE_FLAGS_MULTIARCH := $(DEB_CONFIGURE_EXTRA_FLAGS) \
-	--enable-targets=$(MULTIARCH_TARGETS) \
+	--enable-64-bit-bfd \
+	--enable-targets=`set -- $(MULTIARCH_TARGETS); IFS=,; echo "$$*"` \
 	--disable-sim
 
 # Minimal flags
 DEB_CONFIGURE_FLAGS_MIN := --host=$(DEB_HOST_GNU_TYPE) $(EXTRA_FLAGS) \
-	--disable-tui --without-expat --without-python
+	--disable-tui --without-python --without-babeltrace
 
 # Support parallel=<n> in DEB_BUILD_OPTIONS (see #209008)
 COMMA = ,
@@ -177,16 +194,9 @@ ifneq (,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
 endif
 
 DEB_MAKE_BUILD_TARGET = $(NJOBS) all
-distribution := $(shell lsb_release -is | tr A-Z a-z)
 
 BUILDDIRSOURCE := $(ALL_BUILDDIR)/gdb
 BUILDDIRMIN := $(ALL_BUILDDIR)/gdb-minimal
-
-post-patches::
-	if ! test -f gdb/version.in.backup; then \
-	  mv -f gdb/version.in gdb/version.in.backup; \
-	  sed -e 's/$$/-$(distribution)/' < gdb/version.in.backup > gdb/version.in; \
-	fi
 
 # This should probably be common-post-build-arch, but that runs during
 # install, under fakeroot, in CDBS 0.4.21.
@@ -198,30 +208,30 @@ build/gdb64:: build64-stamp
 build64-stamp:
 	mkdir -p $(BUILDDIR64)
 	cd $(BUILDDIR64) && CC="$(CC64)" CFLAGS="$(CFLAGS64)" AR=ar \
-	  $(shell pwd)/configure $(DEB_CONFIGURE_FLAGS_64)
+	  $(shell pwd)/configure $(DEB_CONFIGURE_NORMAL_ARGS) $(DEB_CONFIGURE_DEBUG_ARGS) $(DEB_CONFIGURE_FLAGS_64)
 	cd $(BUILDDIR64) && $(DEB_MAKE_ENVVARS) $(MAKE) $(NJOBS)
 	touch $@
 
 build/gdb-multiarch:: build-multiarch-stamp
 build-multiarch-stamp:
 	mkdir -p $(BUILDDIRMULTIARCH)
-	cd $(BUILDDIRMULTIARCH) && \
-	  $(shell pwd)/configure $(DEB_CONFIGURE_FLAGS_MULTIARCH)
+	cd $(BUILDDIRMULTIARCH) && CFLAGS="$(CFLAGS)" \
+	  $(shell pwd)/configure $(DEB_CONFIGURE_NORMAL_ARGS) $(DEB_CONFIGURE_DEBUG_ARGS) $(DEB_CONFIGURE_FLAGS_MULTIARCH)
 	cd $(BUILDDIRMULTIARCH) && $(DEB_MAKE_ENVVARS) $(MAKE) $(NJOBS)
 	touch $@
 
 build/gdb-minimal:: build-minimal-stamp
 build-minimal-stamp:
 	mkdir -p $(BUILDDIRMIN)
-	cd $(BUILDDIRMIN) && \
-	  $(shell pwd)/configure $(DEB_CONFIGURE_FLAGS_MIN)
+	cd $(BUILDDIRMIN) && CFLAGS="$(CFLAGS)" \
+	  $(shell pwd)/configure $(DEB_CONFIGURE_NORMAL_ARGS) $(DEB_CONFIGURE_DEBUG_ARGS) $(DEB_CONFIGURE_FLAGS_MIN)
 	cd $(BUILDDIRMIN) && $(DEB_MAKE_ENVVARS) $(MAKE) $(NJOBS)
 	touch $@
 
 check-stamp:
 ifeq ($(run_tests),yes)
-	-ulimit -c unlimited; \
-	$(MAKE) $(NJOBS) -C $(DEB_BUILDDIR)/gdb check
+	$(MAKE) $(NJOBS) -C $(DEB_BUILDDIR)/gdb check \
+	  || echo "**Tests failed, of course.**"
 endif
 	touch $@
 
@@ -255,13 +265,11 @@ ifeq ($(run_tests),yes)
 endif
 
 ifneq ($(DEB_CROSS),yes)
-	# Gcore is only useful for native GDB.
-	$(INSTALL) -m 755 -o root -g root \
-		gdb/gdb_gcore.sh debian/gdb$(TS)/usr/bin/$(TP)gcore
-
 	# Only ship a global gdbinit for the native GDB.
 	install -d debian/gdb$(TS)/etc/gdb
 	install -m 644 debian/gdbinit debian/gdb$(TS)/etc/gdb/
+	# Likewise gdb-add-index
+	install -m 755 gdb/contrib/gdb-add-index.sh debian/gdb$(TS)/usr/bin/gdb-add-index
 endif
 
 	rm -f debian/gdb$(TS)/usr/bin/$(TP)gdbtui
@@ -270,16 +278,19 @@ endif
 binary-post-install/gdb64 ::
 	install -d debian/gdb64/usr/bin
 	install -s -m 755 $(BUILDDIR64)/gdb/gdb debian/gdb64/usr/bin/gdb64
-	dh_link -pgdb64 usr/share/man/man1/gdb.1 usr/share/man/man1/gdb64.1
 	rm -rf debian/gdb64/usr/share/doc/gdb64
 	ln -s gdb debian/gdb64/usr/share/doc/gdb64
 
 binary-post-install/gdb-multiarch ::
 	install -d debian/gdb-multiarch/usr/bin
 	install -s -m 755 $(BUILDDIRMULTIARCH)/gdb/gdb debian/gdb-multiarch/usr/bin/gdb-multiarch
-	dh_link -pgdb-multiarch usr/share/man/man1/gdb.1.gz usr/share/man/man1/gdb64.1.gz
 	rm -rf debian/gdb-multiarch/usr/share/doc/gdb-multiarch
 	ln -s gdb debian/gdb-multiarch/usr/share/doc/gdb-multiarch
+
+binary-post-install/gdbserver ::
+	install -d debian/gdbserver/usr/lib
+	# This file is only built on some arches (x86 ones, so far)
+	-install debian/tmp/usr/lib/libinproctrace.so debian/gdbserver/usr/lib/
 
 binary-post-install/gdb-minimal ::
 	install -d debian/gdb-minimal/usr/bin
@@ -287,30 +298,21 @@ binary-post-install/gdb-minimal ::
 		$(BUILDDIRMIN)/gdb/gdb debian/gdb-minimal/usr/bin/gdb
 
 	$(INSTALL) -m 755 -o root -g root \
-		gdb/gdb_gcore.sh debian/gdb-minimal/usr/bin/gcore
+		$(BUILDDIRMIN)/gdb/gcore debian/gdb-minimal/usr/bin/gcore
 
 	# Only ship a global gdbinit for the native GDB.
 	install -d debian/gdb-minimal/etc/gdb
 	install -m 644 debian/gdbinit debian/gdb-minimal/etc/gdb/
 
-binary-post-install/libgdb-dev ::
-	install -m 644 $(DEB_BUILDDIR)/gdb/libgdb.a debian/libgdb-dev/usr/lib/
-	if test -e $(DEB_BUILDDIR)/sim/*/libsim.a; then \
-	  install -m 644 $(DEB_BUILDDIR)/sim/*/libsim.a debian/libgdb-dev/usr/lib/; \
-	fi
-	rm -rf debian/libgdb-dev/usr/share/doc/libgdb-dev
-	ln -s gdb debian/libgdb-dev/usr/share/doc/libgdb-dev
-
 binary-post-install/gdb-source ::
 	install -d debian/gdb-source/usr/src
 	mkdir -p $(BUILDDIRSOURCE)
-	tar --exclude build -cf - . | (cd $(BUILDDIRSOURCE) && tar -xf -)
+	tar --exclude build --exclude .git -cf - . \
+	  | (cd $(BUILDDIRSOURCE) && tar -xf -)
 	cd $(BUILDDIRSOURCE) && debian/rules clean
 	cd $(dir $(BUILDDIRSOURCE)) \
 	  && tar -cjf $(shell pwd)/debian/gdb-source/usr/src/gdb.tar.bz2 \
 	     $(notdir $(BUILDDIRSOURCE))
-	rm -rf debian/gdb-source/usr/share/doc/gdb-source
-	ln -s gdb debian/gdb-source/usr/share/doc/gdb-source
 
 debian/control:: debian/control.in $(CROSS_FORCE)
 	cat debian/control.in \
@@ -327,14 +329,15 @@ DEB_INSTALL_CHANGELOGS_ALL =
 
 DEB_INSTALL_DOCS_gdb$(TS) = gdb/NEWS gdb/README gdb/doc/refcard.tex \
 	$(DEB_BUILDDIR)/gdb/doc/refcard.dvi \
-	$(DEB_BUILDDIR)/gdb/doc/refcard.ps
+	$(DEB_BUILDDIR)/gdb/doc/refcard.ps \
+	gdb/contrib/
 DEB_INSTALL_CHANGELOGS_gdb$(TS) = gdb/ChangeLog
 ifneq ($(DEB_CROSS),yes)
 DEB_INSTALL_MANPAGES_gdb$(TS) = debian/gcore.1
 endif
 
 DEB_INSTALL_DOCS_gdbserver = gdb/gdbserver/README
-DEB_INSTALL_CHANGELOGS_gdbserver = -XChangeLog
+DEB_INSTALL_CHANGELOGS_gdbserver = gdb/gdbserver/ChangeLog
 
 DEB_INSTALL_DOCS_gdb-minimal = $(DEB_INSTALL_DOCS_gdb$(TS))
 DEB_INSTALL_CHANGELOGS_gdb-minimal = -XChangeLog
